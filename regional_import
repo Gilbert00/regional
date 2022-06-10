@@ -1,0 +1,388 @@
+#!/bin/bash
+#
+# v 0.0.1
+#
+
+set -x
+
+readonly Err="***Error***:"
+
+if [ $# -ne 1 ]; then
+  echo "Usage: $(basename $0) <ImagesDir>"
+  exit 1
+fi
+
+ImagesDir=$1
+ImagesFile=/tmp/$(basename $0)_images_$$.tmp
+
+Media="p0bkp-nb2020lp.region.vtb.ru"
+DSTU="p0bkp-nb2020lp-hcart-robot-tld-8"
+DVP="RegionalBackups"
+
+CMDimport="/usr/openv/netbackup/bin/admincmd/bpimport"
+CmdDupl="/usr/openv/netbackup/bin/admincmd/bpduplicate"
+DirLog="/usr/openv/netbackup/logs/user_ops"
+ImageData="/tmp/$(basename $0)_image_$$.tmp"
+
+readonly cBeforeImport=0
+readonly cAfterImport1=1
+readonly cAfterImport2=2
+readonly cAfterDupl=3
+readonly cAfterDiskDel=4
+
+Copy=0
+Retn=0
+
+function check_dir() {
+# $ImagesDir
+
+	if [[ ! -d $1 ]]; then
+		echo "$Err Directory $1 don't exists !"
+		exit 10
+	fi
+ 
+}
+
+function set_ImagesFile() {
+# $ImagesDir $ImagesFile
+
+	ls $1/*.img* | awk -F_ '{if ($4=="F1") print $1"_"$2}' | awk -F/ '{print $NF}' > $2
+}
+
+function do_import1() {
+# $ImagesDir
+
+  nohup $CMDimport -create_db_info -id $1 -server $Media -L $DirLog/$(basename $0)_1.log -l -v &
+	echo "PID:$!"
+  wait
+	local RC=$?
+	echo "Import 1, RC=$RC"
+}
+
+function do_import2() {
+# $Image
+
+  local DT="-s 01/01/2001 00:00:00 -e 01/01/2030 00:00:00"
+  return
+	
+  nohup $CMDimport -backupid $1 -L $DirLog/$(basename $0)_${1}_2.log -l -v $DT &
+	echo "PID:$!"
+  wait
+	local RC=$?
+	echo "Import 2, $1 RC=$RC"
+}
+
+function do_dupl() {
+# $Image
+
+	local DT=""
+	local Own=""
+  return
+	
+  nohup $CmdDupl $DT -backupid $1 -cn $Copy -dp $DVP -dstunit $DSTU -rl $Retn -set_primary 1 -fail_on_error 0 $Own -L $DirLog/$(basename $0)_dupl_${1}.log -v & 
+  echo "PID:$!"
+  wait
+	local RC=$?
+	echo "Duplication, $1 RC=$RC"
+}
+
+function delete_disk_copy() {
+# $Image
+  local Image=$1
+	local Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==0) print $2}')
+  return
+	
+	/usr/openv/netbackup/bin/admincmd/bpimage -deletecopy $Copy -backupid $Image
+  wait
+}
+
+function get_image_data() {
+# $Image $ImageData
+
+	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+}
+
+function get_image_status() {
+# $Image
+
+#  local Status=0
+	
+	get_image_data $1 $ImageData
+
+	local N=$(grep -c 'no entity was found' $ImageData)
+	if [ $N -gt 0 ]; then
+		echo "0"
+		return
+	fi
+	
+	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
+	if [ $NCopies -eq 0 ]; then
+	  echo "1"
+		return
+	elif [ $NCopies -eq 1 ]; then	
+	  local MediaType=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}')
+		if [ $MediaType -eq 0 ]; then
+			Retn=$(grep '^IMAGE' $ImageData | awk '{print $13}')
+			Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $2}')
+			echo "2"
+		else
+			echo "4"
+		fi
+		return	
+	fi
+	
+	echo "3"
+}
+
+check_dir $ImagesDir
+
+set_ImagesFile $ImagesDir $ImagesFile
+
+do_import1 $ImagesDir
+
+while read Image
+do
+	ImageStatus=$(get_image_status $Image)
+	case $ImageStatus in
+		0)
+			do_import1 $ImagesDir
+			ImageStatus=$(get_image_status $Image)
+			if [[ $ImageStatus -eq 0 ]]; then
+				echo "$Err Image $Image don't pre-imported !"
+		    exit 1
+			fi
+			;&
+		1)
+			do_import2 $Image
+			;&
+		2)
+			do_dupl $Image
+			echo "Image $Image is duplicated."
+			;&
+		3)
+			delete_disk_copy $Image
+			echo "Image $Image - copy on disk is deleted."
+			;;
+		4)
+			echo "Image $Image - copy on disk had been deleted."
+			;;
+		*)
+		echo "$Err Invalid ImageStatus:$ImageStatus for $Image !"
+	esac
+done < $ImagesFile
+
+exit 0
+
+# find /cdisk -name "*.img*" -print > cdisk.out
+# find /cdisk -name "*.img*" -print | xargs dirname | sort -u
+
+# root@p0ubkp-nb2020lp ~ # /usr/openv/netbackup/bin/admincmd/bpimagelist -backupid krsn-fs.reg.vtb24.ru_1606496100 -l
+# IMAGE krsn-fs.reg.vtb24.ru 0 0 13 krsn-fs.reg.vtb24.ru_1606496100 Win-FS 13 *NULL* root Full-Monthly 0 9 1606496100 10133 1764176100 0 0 1663226355 2989446 2 6 0 Win-FS_1606496100_FULL.f *NULL* *NULL* 0 2 2 0 0 *NULL* 0 0 0 0 0 0 0 *NULL* 0 0 0 *NULL* 9833236 1 0 439622954 0 0 *NULL* *NULL* 0 0 0 0 *NULL* *NULL* 0 0 0 0
+# HISTO 0 0 0 0 0 0 0 0 0 0
+# FRAG 1 1 524288000 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F1_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 1 2 524288000 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F2_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 1 3 524288000 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F3_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 1 4 90362355 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F4_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 2 1 1048576000 0 2 14 66 DK30G3 p0ubkp-nb2020lp.region.vtb.ru 65536 205525257 1650329453 25 0 *NULL* 1764176100 0 65548 0 1 0 1 0 1654241967 1 1 *NULL* *NULL* 0 0
+# FRAG 2 2 614650355 0 2 14 67 DK30G3 p0ubkp-nb2020lp.region.vtb.ru 65536 221909259 1650329453 25 0 *NULL* 1764176100 0 65548 0 1 0 1 0 1654241967 1 1 *NULL* *NULL* 0 0
+# root@p0ubkp-nb2020lp ~ # /usr/openv/netbackup/bin/admincmd/bpimagelist -backupid krsn-fs.reg.vtb24.ru_1606496100 -option ONLY_PRE_IMPORT
+# no entity was found
+# root@p0ubkp-nb2020lp ~ # /usr/openv/netbackup/bin/admincmd/bpimagelist -backupid krsn-fs.reg.vtb24.ru_1606496100 -option INCLUDE_PRE_IMPORT
+# IMAGE krsn-fs.reg.vtb24.ru 0 0 13 krsn-fs.reg.vtb24.ru_1606496100 Win-FS 13 *NULL* root Full-Monthly 0 9 1606496100 10133 1764176100 0 0 1663226355 2989446 2 6 0 Win-FS_1606496100_FULL.f *NULL* *NULL* 0 2 2 0 0 *NULL* 0 0 0 0 0 0 0 *NULL* 0 0 0 *NULL* 9833236 1 0 439622954 0 0 *NULL* *NULL* 0 0 0 0 *NULL* *NULL* 0 0 0 0
+# HISTO 0 0 0 0 0 0 0 0 0 0
+# FRAG 1 1 524288000 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F1_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 1 2 524288000 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F2_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 1 3 524288000 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F3_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 1 4 90362355 0 0 0 0 /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F4_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 2 1 1048576000 0 2 14 66 DK30G3 p0ubkp-nb2020lp.region.vtb.ru 65536 205525257 1650329453 25 0 *NULL* 1764176100 0 65548 0 1 0 1 0 1654241967 1 1 *NULL* *NULL* 0 0
+# FRAG 2 2 614650355 0 2 14 67 DK30G3 p0ubkp-nb2020lp.region.vtb.ru 65536 221909259 1650329453 25 0 *NULL* 1764176100 0 65548 0 1 0 1 0 1654241967 1 1 *NULL* *NULL* 0 0
+# root@p0ubkp-nb2020lp ~ # /usr/openv/netbackup/bin/admincmd/bpimagelist -backupid krsn-fs.reg.vtb24.ru_1606496100 -L
+
+# Client:            krsn-fs.reg.vtb24.ru
+# Backup ID:         krsn-fs.reg.vtb24.ru_1606496100
+# Policy:            Win-FS
+# Policy Type:       MS-Windows (13)
+# Proxy Client:      (none specified)
+# Creator:           root
+# Name1:             (none specified)
+# Sched Label:       Full-Monthly
+# Schedule Type:     FULL (0)
+# Retention Level:   infinity (9)
+# Backup Time:       Fri 27 Nov 2020 07:55:00 PM MS (1606496100)
+# Elapsed Time:      10133 second(s)
+# Expiration Time:   Wed 26 Nov 2025 07:55:00 PM MS (1764176100)
+# Maximum Expiration Time:             INFINITY       (2147483647)
+# Compressed:        no
+# Client Encrypted:  no
+# Kilobytes:         1663226355
+# Number of Files:   2989446
+# Number of Copies:  2
+# Number of Fragments:   6
+# Histogram:         0 0 0 0 0 0 0 0 0 0
+# DB Compressed:     no
+# Files File Name:   Win-FS_1606496100_FULL.f
+# Previous Backup Files File Name:   (none specified)
+# Parent Backup Image File Name:   (none specified)
+# SW Version:        (none specified)
+# Options:           0x0
+# MPX:               0
+# TIR Info:          0
+# TIR Expiration:    Thu 01 Jan 1970 03:00:00 AM MS (0)
+# Keyword:           (none specified)
+# Ext Security Info: no
+# File Restore Raw:  no
+# Image Dump Level:  0
+# File System Only:  no
+# Object Descriptor: (none specified)
+# Previous BI Time:  Thu 01 Jan 1970 03:00:00 AM MS (0)
+# BI Full Time:      Thu 01 Jan 1970 03:00:00 AM MS (0)
+# Request Pid:       0
+# Backup Status:     0
+# Stream Number:     0
+# Backup Copy:       Standard (0)
+# Files File size:     439622954
+# PFI type:     0
+# IMAGE_ATTRIBUTE:     0
+# Primary Copy:      2
+# Image Type:        2  (Imported)
+# Job ID:            9833236
+# Num Resumes:       1
+# Resume Expiration: Thu 01 Jan 1970 03:00:00 AM MS (0)
+# Data Classification:    (none specified)
+# Data_Classification_ID: (none specified)
+# Storage Lifecycle Policy:    (none specified)
+# Storage Lifecycle Policy Version:    0
+# STL_Completed:      0
+# Remote Expiration Time: Thu 01 Jan 1970 03:00:00 AM MS (0)
+# Origin Master Server:  (none specified)
+# Origin Master GUID:    (none specified)
+# Snap Time:      Thu 01 Jan 1970 03:00:00 AM MS (0)
+# IR Enabled:      no
+# Client Character Set:     0
+# Image On Hold:     0
+# Kilobytes Data Transferred:   0
+# Copy number:       1
+ # Fragment:         1
+ # Kilobytes:        524288000
+ # Remainder:        0
+ # Media Type:       Disk (0)
+ # Density:          qscsi (0)
+ # File Num:         0
+ # ID:               /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F1_R2
+ # Host:             p0ubkp-nb2020lp.region.vtb.ru
+ # Block Size:       65536
+ # Offset:           0
+ # Media Date:       Thu 01 Jan 1970 03:00:00 AM MS (0)
+ # Dev Written On:   -1
+ # Flags:            0x0
+ # Media Descriptor:        ?
+ # Expiration Time:            INFINITY       (2147483647)
+ # MPX:              0
+ # retention_lvl:    infinity (9)
+ # Try to Keep Time:  Thu 01 Jan 1970 03:00:00 AM MS (0)
+ # Copy Creation Time:  Thu 01 Jan 1970 03:00:00 AM MS (0)
+ # Data Format:      Tar
+ # checkpoint:       0
+ # resume num:       2
+ # Key tag:          *NULL*
+ # STL tag:          *NULL*
+ # Copy on hold:     0
+# Copy number:       1
+ # Fragment:         2
+ # Kilobytes:        524288000
+ # Remainder:        0
+ # Media Type:       Disk (0)
+ # Density:          qscsi (0)
+ # File Num:         0
+ # ID:               /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F2_R2
+ # Host:             p0ubkp-nb2020lp.region.vtb.ru
+ # Block Size:       65536
+ # Offset:           0
+ # Media Date:       Thu 01 Jan 1970 03:00:00 AM MS (0)
+ # Dev Written On:   -1
+ # Flags:            0x0
+ # Media Descriptor:        ?
+ # checkpoint:       0
+ # resume num:       2
+ # Copy on hold:     0
+# Copy number:       1
+ # Fragment:         3
+ # Kilobytes:        524288000
+ # Remainder:        0
+ # Media Type:       Disk (0)
+ # Density:          qscsi (0)
+ # File Num:         0
+ # ID:               /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F3_R2
+ # Host:             p0ubkp-nb2020lp.region.vtb.ru
+ # Block Size:       65536
+ # Offset:           0
+ # Media Date:       Thu 01 Jan 1970 03:00:00 AM MS (0)
+ # Dev Written On:   -1
+ # Flags:            0x0
+ # Media Descriptor:        ?
+ # checkpoint:       0
+ # resume num:       2
+ # Copy on hold:     0
+# Copy number:       1
+ # Fragment:         4
+ # Kilobytes:        90362355
+ # Remainder:        0
+ # Media Type:       Disk (0)
+ # Density:          qscsi (0)
+ # File Num:         0
+ # ID:               /adisk/KRSN/krsn-fs.reg.vtb24.ru_1606496100_C1_F4_R2
+ # Host:             p0ubkp-nb2020lp.region.vtb.ru
+ # Block Size:       65536
+ # Offset:           0
+ # Media Date:       Thu 01 Jan 1970 03:00:00 AM MS (0)
+ # Dev Written On:   -1
+ # Flags:            0x0
+ # Media Descriptor:        ?
+ # checkpoint:       0
+ # resume num:       2
+ # Copy on hold:     0
+# Copy number:       2
+ # Fragment:         1
+ # Kilobytes:        1048576000
+ # Remainder:        0
+ # Media Type:       Media Manager (2)
+ # Density:          hcart2 (14)
+ # File Num:         66
+ # ID:               DK30G3
+ # Host:             p0ubkp-nb2020lp.region.vtb.ru
+ # Block Size:       65536
+ # Offset:           205525257
+ # Media Date:       Tue 19 Apr 2022 03:50:53 AM MS (1650329453)
+ # Dev Written On:   25
+ # Flags:            0x0
+ # Media Descriptor:        ?
+ # Expiration Time:  Wed 26 Nov 2025 07:55:00 PM MS (1764176100)
+ # MPX:              0
+ # retention_lvl:    5 years (12)
+ # Try to Keep Time:  Thu 01 Jan 1970 03:00:00 AM MS (0)
+ # Copy Creation Time:  Fri 03 Jun 2022 10:39:27 AM MS (1654241967)
+ # Data Format:      Tar
+ # checkpoint:       0
+ # resume num:       1
+ # Key tag:          *NULL*
+ # STL tag:          *NULL*
+ # Copy on hold:     0
+# Copy number:       2
+ # Fragment:         2
+ # Kilobytes:        614650355
+ # Remainder:        0
+ # Media Type:       Media Manager (2)
+ # Density:          hcart2 (14)
+ # File Num:         67
+ # ID:               DK30G3
+ # Host:             p0ubkp-nb2020lp.region.vtb.ru
+ # Block Size:       65536
+ # Offset:           221909259
+ # Media Date:       Tue 19 Apr 2022 03:50:53 AM MS (1650329453)
+ # Dev Written On:   25
+ # Flags:            0x0
+ # Media Descriptor:        ?
+ # checkpoint:       0
+ # resume num:       1
+ # Copy on hold:     0
+
