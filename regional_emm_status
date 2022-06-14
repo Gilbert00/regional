@@ -1,0 +1,128 @@
+#!/bin/bash
+#
+# v 0.0.3
+#
+
+set -x
+
+readonly Err="***Error***:"
+
+#readonly ImagesFile=/tmp/$(basename $0)_images_$$.tmp
+
+readonly DirLog="/usr/openv/netbackup/logs/user_ops"
+readonly ImageData="/tmp/$(basename $0)_image_$$.tmp"
+
+readonly cBeforeImport=0
+readonly cAfterImport1=1
+readonly cAfterImport2=2
+readonly cAfterDupl=3
+readonly cAfterDiskDel=4
+
+Copy=0
+Retn=0
+
+function check_dir() {
+# $Dir
+
+	if [[ ! -d /$1 ]]; then
+		echo "$Err Directory /$1 don't exists !"
+		exit 10
+	fi
+}
+
+function get_image_data() {
+# $Image $ImageData
+
+#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
+}
+
+readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
+
+function check_bpimmedia() {
+#	$ImageDir $Image
+
+	local ImgDir=$1
+	local Img=$2
+	/usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid $ImgDir -l -option ONLY_PRE_IMPORT > $ImMediaData 2>&1 
+	local N=$(grep -c "$Img" $ImMediaData)
+	if [ $N -gt 0 ]; then
+	  echo "1"
+	else
+		echo "0"
+	fi
+}
+
+readonly cMediaTypeDisk=0
+readonly cMediaTypeTape=2
+
+readonly cMediaEmpty="---"
+	MediaDisk=$cMediaEmpty
+	MediaTape=$cMediaEmpty
+
+function get_image_status() {
+# $Image
+
+#  local Status=0
+	
+	get_image_data $1 $ImageData
+
+	local N=$(grep -c 'no entity was found' $ImageData)
+	if [ $N -gt 0 ]; then
+		local Nimm=$(check_bpimmedia $ImageDir $Image)
+		return $Nimm
+	fi
+	
+	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
+	if [ $NCopies -eq 0 ]; then	# ???
+	  return 1
+	elif [ $NCopies -eq 1 ]; then	
+	  local MediaType=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}')
+		if [ $MediaType -eq $cMediaTypeDisk ]; then
+		  MediaDisk=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $9}' | xargs dirname)
+			return 2
+		else	# $MediaType -eq $cMediaTypeTape
+		  MediaTape=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $9}')
+			return 4
+		fi
+#		return	
+	fi
+
+#	$NCopies -gt 1	
+#	N=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}' | sort -u | wc -l)
+#	if [ $N -gt 1 ]; then
+		MediaTape=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $9}' MT=$cMediaTypeTape | sed -n '1p')
+		MediaDisk=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $9}' MT=$cMediaTypeDisk | xargs dirname | sed -n '1p')
+		MediaTape=${MediaTape:-$cMediaEmpty}
+		MediaDisk=${MediaDisk:-$cMediaEmpty}
+#	else
+#	fi
+	
+	return 3	# $NCopies -eq 2
+}
+
+ImagesFile="emm_images.txt"
+StatusFile="regional_emm_status.txt"
+[[ -f $StatusFile ]] && rm $StatusFile
+
+/usr/openv/netbackup/bin/admincmd/bpimagelist -server p0ubkp-nb2020lp.region.vtb.ru  -d 01/01/2001 -e 06/30/2030 -option INCLUDE_PRE_IMPORT -idonly | awk '{print $10}' > $ImagesFile
+	
+while read Image
+do
+	MediaDisk=$cMediaEmpty
+	MediaTape=$cMediaEmpty
+	get_image_status $Image
+	ImageStatus=$? 
+#	check existence on disk	
+	IsOnDisk='-'
+#	echo "MediaDisk:$MediaDisk MediaTape:$MediaTape"
+	if [ $MediaDisk != $cMediaEmpty ]; then
+		NDisk=$(ls $MediaDisk/$Image*F1*.img 2>&1 | grep -c 'No such file')
+		[ $NDisk -eq 0 ] &&	IsOnDisk='+'
+	fi
+	echo "$ImageStatus $Image $MediaDisk $IsOnDisk $MediaTape" >> $StatusFile
+
+done < $ImagesFile
+
+exit 0
+

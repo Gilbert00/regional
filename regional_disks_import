@@ -1,0 +1,36 @@
+#!/bin/bash
+#
+# v 0.0.2
+#
+
+#set -x
+
+readonly Err="***Error***:"
+
+function check_dir() {
+# $Dir
+
+	if [[ ! -d $1 ]]; then
+		echo "$Err Directory $1 don't exists !"
+		exit 10
+	fi
+}
+
+for Dir in adisk bdisk cdisk
+do
+    Dir0="/$Dir"
+    check_dir $Dir0
+	
+    SubDirFile="${Dir}_subdirs.txt"
+
+    find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
+	
+    while read SubDir
+    do
+	:	
+	./regional_import $SubDir 2>&1
+    done < $SubDirFile
+
+done	
+
+# nohup ./regional_disks_import > regional_disks_import.out 2>&1 &	

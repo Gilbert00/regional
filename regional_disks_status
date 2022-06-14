@@ -1,16 +1,16 @@
 #!/bin/bash
 #
-# v 0.0.1
+# v 0.0.4
 #
 
 #set -x
 
 readonly Err="***Error***:"
 
-ImagesFile=/tmp/$(basename $0)_images_$$.tmp
+#readonly ImagesFile=/tmp/$(basename $0)_images_$$.tmp
 
-DirLog="/usr/openv/netbackup/logs/user_ops"
-ImageData="/tmp/$(basename $0)_image_$$.tmp"
+readonly DirLog="/usr/openv/netbackup/logs/user_ops"
+readonly ImageData="/tmp/$(basename $0)_image_$$.tmp"
 
 readonly cBeforeImport=0
 readonly cAfterImport1=1
@@ -33,8 +33,28 @@ function check_dir() {
 function get_image_data() {
 # $Image $ImageData
 
-	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
 }
+
+readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
+
+function check_bpimmedia() {
+#	$ImageDir $Image
+
+	local ImgDir=$1
+	local Img=$2
+	/usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid $ImgDir -l -option ONLY_PRE_IMPORT > $ImMediaData 2>&1 
+	local N=$(grep -c "$Img" $ImMediaData)
+	if [ $N -gt 0 ]; then
+	  echo "1"
+	else
+		echo "0"
+	fi
+}
+
+readonly cMediaTypeDisk=0
+readonly cMediaTypeTape=2
 
 function get_image_status() {
 # $Image
@@ -45,27 +65,28 @@ function get_image_status() {
 
 	local N=$(grep -c 'no entity was found' $ImageData)
 	if [ $N -gt 0 ]; then
-		echo "0"
+		local Nimm=$(check_bpimmedia $ImageDir $Image)
+		echo "$Nimm"
 		return
 	fi
 	
 	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
-	if [ $NCopies -eq 0 ]; then
+	if [ $NCopies -eq 0 ]; then	# ???
 	  echo "1"
 		return
 	elif [ $NCopies -eq 1 ]; then	
 	  local MediaType=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}')
-		if [ $MediaType -eq 0 ]; then
+		if [ $MediaType -eq $cMediaTypeDisk ]; then
 			Retn=$(grep '^IMAGE' $ImageData | awk '{print $13}')
 			Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $2}')
 			echo "2"
-		else
+		else	# $MediaType -eq $cMediaTypeTape
 			echo "4"
 		fi
 		return	
 	fi
 	
-	echo "3"
+	echo "3"	# $NCopies -eq 2
 }
 
 for Dir in adisk bdisk cdisk
@@ -74,11 +95,22 @@ do
 
 	ImagesFile="$Dir.out"
 	StatusFile="${Dir}_status.out"
-	find /$Dir -name "*.img*" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' | awk -F/ '{print $NF}' > $ImagesFile
+#	find /$Dir -name "*.img*" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' | awk -F/ '{print $NF}' > $ImagesFile
+	find /$Dir -name "*.img" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' > $ImagesFile
 	
 	[[ -f $StatusFile ]] && rm $StatusFile
-	while read Image
+	while read ImageRecord
 	do
+	  Image=$(echo $ImageRecord | xargs basename)
+		ImageDir=$(echo $ImageRecord | xargs dirname)
+
+#		checking info files existence		
+		Ninfo=$(ls -l $ImageDir/*.info | grep -c "$Image")
+		if [[ $Ninfo -eq 0 ]]; then
+			echo "$Err info files are absent for $ImageDir/$Image !"
+			continue
+		fi
+		
 	  ImageStatus=$(get_image_status $Image) 
 		echo "$ImageStatus $Image" >> $StatusFile
 	
@@ -339,3 +371,21 @@ exit 0
 # FRAG 1 1 524288000 0 0 0 0 /bdisk/KRSN/krsn-fs.reg.vtb24.ru_1501254031_C1_F1_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 9 1 *NULL* 0
 # FRAG 1 2 62684030 0 0 0 0 /bdisk/KRSN/krsn-fs.reg.vtb24.ru_1501254031_C1_F2_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 9 1 *NULL* 0
 # .info file for krsn-fs.reg.vtb24.ru_1598633700 don't exists!!!
+
+# root@p0ubkp-nb2020lp ~ # /usr/openv/netbackup/bin/admincmd/bpimagelist -media -backupid  krsn-fs.reg.vtb24.ru_1598633700  -l
+# no entity was found
+# root@p0ubkp-nb2020lp ~ #  /usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid /bdisk/KRSN -l -option ONLY_PRE_IMPORT
+# IMAGE krsn-fs.reg.vtb24.ru 13 krsn-fs.reg.vtb24.ru_1593270622 Full_of_Win-FS 13 Monthly 0 9 0 1655461460 0 0 0
+# FRAG 1 1 3276679 0 0 0 0 /bdisk/KRSN/krsn-fs.reg.vtb24.ru_1593270622_C1_F1_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 1655461460 0 9 1 *NULL* 0
+# IMAGE krsn-fs.reg.vtb24.ru 13 krsn-fs.reg.vtb24.ru_1593183686 Win-FS 13 Full-Monthly 0 9 0 1655461460 0 0 0
+# FRAG 1 1 524288000 0 0 0 0 /bdisk/KRSN/krsn-fs.reg.vtb24.ru_1593183686_C1_F1_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 1655461460 0 9 1 *NULL* 0
+# FRAG 1 2 524288000 0 0 0 0 /bdisk/KRSN/krsn-fs.reg.vtb24.ru_1593183686_C1_F2_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 1655461460 0 9 1 *NULL* 0
+# FRAG 1 3 374016377 0 0 0 0 /bdisk/KRSN/krsn-fs.reg.vtb24.ru_1593183686_C1_F3_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 1655461460 0 9 1 *NULL* 0
+
+# root@p0ubkp-nb2020lp ~ #  /usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid /adisk/ULAN -l -option ONLY_PRE_IMPORT
+# no entity was found
+# root@p0ubkp-nb2020lp ~ # /usr/openv/netbackup/bin/admincmd/bpimagelist -media -backupid  ulan-fs.reg.vtb24.ru_1582898394  -l
+# IMAGE ulan-fs.reg.vtb24.ru 0 0 13 ulan-fs.reg.vtb24.ru_1582898394 Win-FS 13 *NULL* root Full-Monthly 0 9 1582898394 2558 1740578394 0 0 392640860 600798 2 2 0 Win-FS_1582898394_FULL.f *NULL* *NULL* 0 2 2 0 0 *NULL* 0 0 0 0 0 0 0 *NULL* 0 0 0 *NULL* 9833228 1 0 85757311 0 0 *NULL* *NULL* 0 1582898376 0 0 *NULL* *NULL* 0 0 0 0
+# HISTO 0 0 0 0 0 0 0 0 0 0
+# FRAG 1 1 392640860 0 0 0 0 /adisk/ULAN/ulan-fs.reg.vtb24.ru_1582898394_C1_F1_R2 p0ubkp-nb2020lp.region.vtb.ru 65536 0 0 -1 0 *NULL* 2147483647 0 65545 0 2 0 1 0 0 1 1 *NULL* *NULL* 0 0
+# FRAG 2 1 392640860 0 2 14 21 DK30G7 p0ubkp-nb2020lp.region.vtb.ru 65536 66366222 1650908340 11 0 *NULL* 1740578394 0 65548 0 1 0 1 0 1654212211 1 1 *NULL* *NULL* 0 0
