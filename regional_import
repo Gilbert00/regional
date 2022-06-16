@@ -72,7 +72,7 @@ function do_import2() {
 	echo "Start import of image $1"
 #  return
 	
-  nohup $CMDimport -backupid $1 -L $DirLog/$(basename $0)_${1}_2.log -l $DT &
+  nohup $CMDimport -backupid $1 -L $DirLog/$(basename $0)_import2_${1}.log -l $DT &
 	PID=$!
 	echo "PID:$!"
   wait $PID
@@ -154,26 +154,23 @@ function get_image_status() {
 	local N=$(grep -c 'no entity was found' $ImageData)
 	if [ $N -gt 0 ]; then
 		local Nimm=$(check_bpimmedia $ImageDir $Image)
-		echo "$Nimm"
-		return
+		return $Nimm
 	fi
 	
 	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
 	if [ $NCopies -eq 0 ]; then	# ???
-	  echo "1"
-		return
+	  return 1
 	elif [ $NCopies -eq 1 ]; then	
 	  local MediaType=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}')
 		if [ $MediaType -eq $cMediaTypeDisk ]; then
 			get_dupl_params
-			echo "2"
+			return 2
 		else	# $MediaType -eq $cMediaTypeTape
-			echo "4"
+			return 4
 		fi
-		return	
 	fi
 	
-	echo "3"	# $NCopies -eq 2
+	return 3	# $NCopies -eq 2
 }
 
 check_dir $ImagesDir
@@ -185,7 +182,8 @@ do_import1 $ImagesDir
 while read Image
 do
   echo "Image: $Image"
-	ImageStatus=$(get_image_status $Image)
+	get_image_status $Image
+	ImageStatus=$?
 	case $ImageStatus in
 		0)
 			do_import1 $ImagesDir

@@ -1,0 +1,64 @@
+#!/bin/bash
+#
+# v 0.0.2
+#
+
+#set -x
+
+readonly Err="***Error***:"
+
+AllImages="/tmp/$(basename $0)_all_images.txt"
+[[ -f $AllImages ]] && rm $AllImages
+ImagesSorted="regional_images_sorted.txt"
+
+OneDir="/tmp/$(basename $0)_onedir.tmp"
+
+function check_dir() {
+# $Dir
+
+	if [[ ! -d $1 ]]; then
+		echo "$Err Directory $1 don't exists !"
+		exit 10
+	fi
+}
+
+function out_subdir_images() {
+# $SubDir
+	local ImageFile
+	local UET
+
+#	ls -lrt $1/*_F1_*.img | sed '1d' | awk '{print $9}' > $OneDir
+	ls -lrt $1/*_F1_*.img |  awk '{print $10}' > $OneDir
+	
+	while read ImageFile
+	do
+		UET=$(date -r $ImageFile +%s)
+#		echo "$UET $1 $ImageFile" >> $AllImages
+		echo "$UET $ImageFile" >> $AllImages	
+	done < $OneDir
+}
+
+for Dir in adisk bdisk cdisk
+do
+	Dir0="/$Dir"
+	check_dir $Dir0
+
+	SubDirFile="$(basename $0)_${Dir}_subdirs.txt"
+
+#	find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
+	find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1") print $0}' | xargs dirname | sort -u > $SubDirFile
+
+
+	while read SubDir
+	do
+		:	
+		out_subdir_images	$SubDir
+#		./regional_import $SubDir 2>&1
+	done < $SubDirFile
+	
+done	
+
+sort -k1n $AllImages > $ImagesSorted
+
+exit 0
+
