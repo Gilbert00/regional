@@ -78,6 +78,7 @@ function do_import2() {
   wait $PID
 	RC=$?
 	echo "Finish import of image $1, RC=$RC"
+	return $RC
 }
 
 function do_dupl() {
@@ -96,13 +97,21 @@ function do_dupl() {
   wait $PID
 	RC=$?
 	echo "Finish duplication of image $1, RC=$RC"
+	return $RC
 }
 
 function delete_disk_copy() {
 # $Image
   local Image=$1
 	
-	get_image_data $1 $ImageData
+	get_image_status $Image
+	local ImageStatus=$?
+	if [[ $ImageStatus -ne cAfterDupl ]]; then
+	  echo "Err Invalid status $ImageStatus of image $Image"
+	  return 1
+	fi
+	
+#	get_image_data $Image $ImageData
 	local Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==0) print $2}')
 #  return
 	
@@ -111,6 +120,7 @@ function delete_disk_copy() {
   wait $PID
 	RC=$?
 	echo "Finish Exclude disk copy $Copy, $1, RC=$RC"	
+	return $RC
 }
 
 function get_image_data() {

@@ -16,6 +16,15 @@ function check_dir() {
 	fi
 }
 
+function send_ended_mail() {
+
+  mailx -s "Program $(basename $0)" backup_group@vtb.ru <<EOF
+  Program $(basename $0) is ended.	
+EOF
+	
+  return 0
+}
+
 for Dir in adisk bdisk cdisk
 do
     Dir0="/$Dir"
@@ -32,5 +41,7 @@ do
     done < $SubDirFile
 
 done	
+
+send_ended_mail
 
 # nohup ./regional_disks_import > regional_disks_import.out 2>&1 &	
