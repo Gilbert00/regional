@@ -1,18 +1,18 @@
 #!/bin/bash
 #
-# v 0.0.4
+# v 0.0.5
 #
 
 #set -x
 
 readonly Err="***Error***:"
 
-if [ $# -ne 1 ]; then
-  echo "Usage: $(basename $0) <ImagesDir>"
-  exit 1
-fi
+# if [ $# -ne 1 ]; then
+  # echo "Usage: $(basename $0) <ImagesDir>"
+  # exit 1
+# fi
 
-ImagesDir=$1
+#ImagesDir=$1
 ImagesFile=/tmp/$(basename $0)_images_$$.tmp
 
 readonly Media="p0ubkp-nb2020lp.region.vtb.ru"
@@ -41,10 +41,11 @@ function check_dir() {
 
 	if [[ ! -d $1 ]]; then
 		echo "$Err Directory $1 don't exists !"
-		exit 10
+		return 10
 	fi
  
   echo "Directory: $1"
+	return 0
 }
 
 function set_ImagesFile() {
@@ -183,47 +184,82 @@ function get_image_status() {
 	return 3	# $NCopies -eq 2
 }
 
-check_dir $ImagesDir
+function one_dir_import() {
+# $SubDir
+	ImagesDir=$1
 
-set_ImagesFile $ImagesDir $ImagesFile
+	check_dir $ImagesDir
+	[[ $? -gt 0 ]] && return $?
 
-do_import1 $ImagesDir
+	set_ImagesFile $ImagesDir $ImagesFile
 
-while read Image
+	do_import1 $ImagesDir
+
+	while read Image
+	do
+		echo "Image: $Image"
+		get_image_status $Image
+		ImageStatus=$?
+		case $ImageStatus in
+			0)
+				do_import1 $ImagesDir
+				ImageStatus=$(get_image_status $Image)
+				if [[ $ImageStatus -eq 0 ]]; then
+					echo "$Err Image $Image don't pre-imported !"
+					continue
+	#		    exit 1
+				fi
+				;&
+			1)
+				do_import2 $Image
+				[[ $RC -gt 0 ]] && continue
+				;&
+			2)
+				do_dupl $Image
+	#			echo "Image $Image is duplicated."
+				[[ $RC -gt 0 ]] && continue
+				;&
+			3)
+				delete_disk_copy $Image
+	#			echo "Image $Image - copy on disk is excluded."
+				;;
+			4)
+				echo "Image $Image - copy on disk had been excluded."
+				;;
+			*)
+			echo "$Err Invalid ImageStatus:$ImageStatus for $Image !"
+		esac
+	done < $ImagesFile
+
+}
+
+function send_ended_mail() {
+
+  mailx -s "Program $(basename $0)" backup_group@vtb.ru <<EOF
+  Program $(basename $0) is ended.	
+EOF
+	
+  return 0
+}
+
+for Dir in adisk bdisk cdisk
 do
-  echo "Image: $Image"
-	get_image_status $Image
-	ImageStatus=$?
-	case $ImageStatus in
-		0)
-			do_import1 $ImagesDir
-			ImageStatus=$(get_image_status $Image)
-			if [[ $ImageStatus -eq 0 ]]; then
-				echo "$Err Image $Image don't pre-imported !"
-				continue
-#		    exit 1
-			fi
-			;&
-		1)
-			do_import2 $Image
-			[[ $RC -gt 0 ]] && continue
-			;&
-		2)
-			do_dupl $Image
-#			echo "Image $Image is duplicated."
-			[[ $RC -gt 0 ]] && continue
-			;&
-		3)
-			delete_disk_copy $Image
-#			echo "Image $Image - copy on disk is excluded."
-			;;
-		4)
-			echo "Image $Image - copy on disk had been excluded."
-			;;
-		*)
-		echo "$Err Invalid ImageStatus:$ImageStatus for $Image !"
-	esac
-done < $ImagesFile
+	Dir0="/$Dir"
+	check_dir $Dir0
+
+	SubDirFile="${Dir}_$(basename $0)_subdirs.txt"
+
+	find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
+
+	while read SubDir
+	do
+		:	
+		one_dir_import $SubDir
+	done < $SubDirFile
+
+done	
+
+send_ended_mail
 
 exit 0
 
