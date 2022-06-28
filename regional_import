@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# v 0.0.5
-#
-
 #set -x
+readonly Version="0.0.6"
+# 
+#
 
 readonly Err="***Error***:"
 
@@ -241,6 +241,11 @@ EOF
 	
   return 0
 }
+
+--------------------
+# main
+
+echo "Version:$Version"
 
 for Dir in adisk bdisk cdisk
 do

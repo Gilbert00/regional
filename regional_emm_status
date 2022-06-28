@@ -1,16 +1,24 @@
 #!/bin/bash
 #
-# v 0.0.3
+# v 0.1.0
 #
 
 set -x
 
 readonly Err="***Error***:"
 
-#readonly ImagesFile=/tmp/$(basename $0)_images_$$.tmp
+readonly Media="p0ubkp-nb2020lp.region.vtb.ru"
+readonly Client=$Media
 
 readonly DirLog="/usr/openv/netbackup/logs/user_ops"
 readonly ImageData="/tmp/$(basename $0)_image_$$.tmp"
+readonly Tapes="/tmp/$(basename $0)_tapes_$$.tmp"
+
+readonly ImagesFile="emm_images.txt"
+readonly StatusFile="regional_emm_status.txt"
+[[ -f $StatusFile ]] && rm $StatusFile
+
+readonly DVP="RegionalBackups"
 
 readonly cBeforeImport=0
 readonly cAfterImport1=1
@@ -59,6 +67,8 @@ readonly cMediaTypeTape=2
 readonly cMediaEmpty="---"
 	MediaDisk=$cMediaEmpty
 	MediaTape=$cMediaEmpty
+	
+ExpireDate=""	
 
 function get_image_status() {
 # $Image
@@ -66,6 +76,9 @@ function get_image_status() {
 #  local Status=0
 	
 	get_image_data $1 $ImageData
+	
+	UTime=$(grep '^IMAGE' $ImageData | awk '{print $16}')
+	ExpireDate=$(get_date_on_utime $UTime)
 
 	local N=$(grep -c 'no entity was found' $ImageData)
 	if [ $N -gt 0 ]; then
@@ -80,6 +93,7 @@ function get_image_status() {
 	  local MediaType=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}')
 		if [ $MediaType -eq $cMediaTypeDisk ]; then
 		  MediaDisk=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $9}' | xargs dirname)
+			Host=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $10}' MT=$cMediaTypeDisk | sed -n '1p')
 			return 2
 		else	# $MediaType -eq $cMediaTypeTape
 		  MediaTape=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $9}')
@@ -95,32 +109,60 @@ function get_image_status() {
 		MediaDisk=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $9}' MT=$cMediaTypeDisk | xargs dirname | sed -n '1p')
 		MediaTape=${MediaTape:-$cMediaEmpty}
 		MediaDisk=${MediaDisk:-$cMediaEmpty}
+		Host=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $10}' MT=$cMediaTypeDisk | sed -n '1p')
 #	else
 #	fi
 	
 	return 3	# $NCopies -eq 2
 }
 
-ImagesFile="emm_images.txt"
-StatusFile="regional_emm_status.txt"
-[[ -f $StatusFile ]] && rm $StatusFile
+function get_date_on_utime() {
+# UTime
 
-/usr/openv/netbackup/bin/admincmd/bpimagelist -server p0ubkp-nb2020lp.region.vtb.ru  -d 01/01/2001 -e 06/30/2030 -option INCLUDE_PRE_IMPORT -idonly | awk '{print $10}' > $ImagesFile
+	echo "$(date -d @$1 +%Y-%m-%d_%H:%M:%S)"
+}
+
+# function get_ivp() {
+# # $DVP
+
+	# echo $(/usr/openv/volmgr/bin/vmpool -list_all -bx | grep $1 | awk '{print $2}')
+# }
+ 
+#-----------------------
+# main
+
+#IVP=$(get_ivp $DVP)
+
+/usr/openv/volmgr/bin/vmquery -pn $DVP -b | sed '1,3d' | awk '{print $1}' > $Tapes
+
+/usr/openv/netbackup/bin/admincmd/bpimagelist -server $Media  -d 01/01/2001 -e 06/30/2030 -option INCLUDE_PRE_IMPORT -idonly | awk '{print $10}' > $ImagesFile
 	
 while read Image
 do
 	MediaDisk=$cMediaEmpty
 	MediaTape=$cMediaEmpty
+	Host=""
 	get_image_status $Image
 	ImageStatus=$? 
 #	check existence on disk	
 	IsOnDisk='-'
 #	echo "MediaDisk:$MediaDisk MediaTape:$MediaTape"
+
 	if [ $MediaDisk != $cMediaEmpty ]; then
+#		check_host
+	  [[ ! -z $Host ]] && [[ $Host != $Client ]] && continue
+		
 		NDisk=$(ls $MediaDisk/$Image*F1*.img 2>&1 | grep -c 'No such file')
 		[ $NDisk -eq 0 ] &&	IsOnDisk='+'
 	fi
-	echo "$ImageStatus $Image $MediaDisk $IsOnDisk $MediaTape" >> $StatusFile
+
+#	check_volume_pool	
+	if [ $MediaTape != $cMediaEmpty ]; then
+		NTape=$(grep -c $MediaTape $Tapes)
+		[[ $NTape -eq 0 ]] && continue
+	fi	
+	
+	echo "$ImageStatus $Image $MediaDisk $IsOnDisk $MediaTape $ExpireDate" >> $StatusFile
 
 done < $ImagesFile
 
