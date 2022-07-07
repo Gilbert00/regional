@@ -48,10 +48,15 @@ function check_dir() {
 	return 0
 }
 
+function curr_time() {
+  echo "at $(date +%Y-%m-%d_%H:%M:%S)"
+}
+
 function set_ImagesFile() {
 # $ImagesDir $ImagesFile
 
-	ls $1/*.img | awk -F_ '{if ($4=="F1") print $1"_"$2}' | awk -F/ '{print $NF}' > $2
+#	ls $1/*.img | awk -F_ '{if ($4=="F1") print $1"_"$2}' | awk -F/ '{print $NF}' > $2
+	ls $1/*.img | awk -F_ '{if ($4=="F1") print $1"_"$2,$3}'  > $2
 }
 
 function do_import1() {
@@ -63,14 +68,14 @@ function do_import1() {
 	echo "PID:$!"
   wait $PID
 	RC=$?
-	echo "Finish Import 1 of Dir $1, RC=$RC"
+	echo "Finish Import 1 of Dir $1, RC=$RC $(curr_time)"
 }
 
 function do_import2() {
 # $Image
 
   local DT="-s 01/01/2001 00:00:00 -e 01/01/2030 00:00:00"
-	echo "Start import of image $1"
+	echo "Start import of image $1 $(curr_time)"
 #  return
 	
   nohup $CMDimport -backupid $1 -L $DirLog/$(basename $0)_import2_${1}.log -l $DT &
@@ -78,32 +83,33 @@ function do_import2() {
 	echo "PID:$!"
   wait $PID
 	RC=$?
-	echo "Finish import of image $1, RC=$RC"
+	echo "Finish import of image $1, RC=$RC $(curr_time)"
 	return $RC
 }
 
 function do_dupl() {
-# $Image
+# $Image $Copy
 
 	get_image_data $1 $ImageData
 	get_dupl_params
 	local DT=""
 	local Own=""
-	echo "Start duplication of image $1"
+	echo "Start duplication of image $1 $(curr_time)"
 #  return
 	
-  nohup $CmdDupl $DT -backupid $1 -cn $Copy -dp $DVP -dstunit $DSTU -rl $Retn -set_primary 1 -fail_on_error 0 $Own -L $DirLog/$(basename $0)_dupl_${1}.log -v & 
+  nohup $CmdDupl $DT -backupid $1 -cn $2 -dp $DVP -dstunit $DSTU -rl $Retn -set_primary 1 -fail_on_error 0 $Own -L $DirLog/$(basename $0)_dupl_${1}.log -v & 
 	PID=$!
   echo "PID:$!"
   wait $PID
 	RC=$?
-	echo "Finish duplication of image $1, RC=$RC"
+	echo "Finish duplication of image $1, RC=$RC $(curr_time)"
 	return $RC
 }
 
 function delete_disk_copy() {
-# $Image
+# $Image $Copy
   local Image=$1
+	local Copy=$2
 	
 	get_image_status $Image
 	local ImageStatus=$?
@@ -113,44 +119,45 @@ function delete_disk_copy() {
 	fi
 	
 #	get_image_data $Image $ImageData
-	local Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==0) print $2}')
+#	local Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==0) print $2}')
 #  return
 	
 	/usr/openv/netbackup/bin/admincmd/bpimage -deletecopy $Copy -backupid $Image
 	PID=$!
   wait $PID
 	RC=$?
-	echo "Finish Exclude disk copy $Copy, $1, RC=$RC"	
+	echo "Finish Exclude disk copy $Copy, $1, RC=$RC $(curr_time)"	
 	return $RC
 }
 
 function get_image_data() {
 # $Image $ImageData
 
-#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
-	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
+	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
 }
 
 get_dupl_params() {
 	Retn=$(grep '^IMAGE' $ImageData | awk '{print $13}')
-	Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $2}')
+#TO-DO: Copy from disks image.	Done in one_dir_import
+#	Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $2}' | sed -n '1p')
 }
 
-readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
+# readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
 
-function check_bpimmedia() {
-#	$ImageDir $Image
+# function check_bpimmedia() {
+# #	$ImageDir $Image
 
-	local ImgDir=$1
-	local Img=$2
-	/usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid $ImgDir -l -option ONLY_PRE_IMPORT > $ImMediaData 2>&1 
-	local N=$(grep -c "$Img" $ImMediaData)
-	if [ $N -gt 0 ]; then
-	  echo "1"
-	else
-		echo "0"
-	fi
-}
+	# local ImgDir=$1
+	# local Img=$2
+	# /usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid $ImgDir -l -option ONLY_PRE_IMPORT > $ImMediaData 2>&1 
+	# local N=$(grep -c "$Img" $ImMediaData)
+	# if [ $N -gt 0 ]; then
+	  # echo "1"
+	# else
+		# echo "0"
+	# fi
+# }
 
 readonly cMediaTypeDisk=0
 readonly cMediaTypeTape=2
@@ -164,9 +171,12 @@ function get_image_status() {
 
 	local N=$(grep -c 'no entity was found' $ImageData)
 	if [ $N -gt 0 ]; then
-		local Nimm=$(check_bpimmedia $ImageDir $Image)
-		return $Nimm
+#		local Nimm=$(check_bpimmedia $ImageDir $Image)
+		return 0
 	fi
+	
+	N=$(grep "^IMAGE" $ImageData | awk '{print $29}')
+	[[ $N -eq 1 ]] && return 1
 	
 	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
 	if [ $NCopies -eq 0 ]; then	# ???
@@ -195,9 +205,11 @@ function one_dir_import() {
 
 	do_import1 $ImagesDir
 
-	while read Image
+	while read ImageAndDir Copy
 	do
-		echo "Image: $Image"
+	  Image=$(echo $ImageAndDir | awk -F/ '{print $NF}')
+		Copy=${Copy:1}
+		echo "Image: $Image, Copy: $Copy"
 		get_image_status $Image
 		ImageStatus=$?
 		case $ImageStatus in
@@ -215,12 +227,12 @@ function one_dir_import() {
 				[[ $RC -gt 0 ]] && continue
 				;&
 			2)
-				do_dupl $Image
+				do_dupl $Image $Copy
 	#			echo "Image $Image is duplicated."
 				[[ $RC -gt 0 ]] && continue
 				;&
 			3)
-				delete_disk_copy $Image
+				delete_disk_copy $Image $Copy
 	#			echo "Image $Image - copy on disk is excluded."
 				;;
 			4)
@@ -242,12 +254,12 @@ EOF
   return 0
 }
 
---------------------
+#--------------------
 # main
 
 echo "Version:$Version"
 
-for Dir in adisk bdisk cdisk
+for Dir in  cdisk bdisk adisk
 do
 	Dir0="/$Dir"
 	check_dir $Dir0

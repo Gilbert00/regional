@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.1.0
+# v 0.1.1
 #
 
 set -x
@@ -41,25 +41,25 @@ function check_dir() {
 function get_image_data() {
 # $Image $ImageData
 
-#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
-	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
+/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
 }
 
-readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
+#readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
 
-function check_bpimmedia() {
-#	$ImageDir $Image
+# function check_bpimmedia() {
+# #	$ImageDir $Image
 
-	local ImgDir=$1
-	local Img=$2
-	/usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid $ImgDir -l -option ONLY_PRE_IMPORT > $ImMediaData 2>&1 
-	local N=$(grep -c "$Img" $ImMediaData)
-	if [ $N -gt 0 ]; then
-	  echo "1"
-	else
-		echo "0"
-	fi
-}
+	# local ImgDir=$1
+	# local Img=$2
+	# /usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid $ImgDir -l -option ONLY_PRE_IMPORT > $ImMediaData 2>&1 
+	# local N=$(grep -c "$Img" $ImMediaData)
+	# if [ $N -gt 0 ]; then
+	  # echo "1"
+	# else
+		# echo "0"
+	# fi
+# }
 
 readonly cMediaTypeDisk=0
 readonly cMediaTypeTape=2
@@ -77,14 +77,17 @@ function get_image_status() {
 	
 	get_image_data $1 $ImageData
 	
-	UTime=$(grep '^IMAGE' $ImageData | awk '{print $16}')
-	ExpireDate=$(get_date_on_utime $UTime)
-
 	local N=$(grep -c 'no entity was found' $ImageData)
 	if [ $N -gt 0 ]; then
-		local Nimm=$(check_bpimmedia $ImageDir $Image)
-		return $Nimm
+#		local Nimm=$(check_bpimmedia $ImageDir $Image)
+		return 0
 	fi
+
+	UTime=$(grep '^IMAGE' $ImageData | awk '{print $16}')
+	ExpireDate=$(get_date_on_utime $UTime)
+	
+	N=$(grep "^IMAGE" $ImageData | awk '{print $29}')
+	[[ $N -eq 1 ]] && return 1
 	
 	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
 	if [ $NCopies -eq 0 ]; then	# ???
