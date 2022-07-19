@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.0.5
+# v 0.0.6
 #
 
 #set -x
@@ -33,8 +33,8 @@ function check_dir() {
 function get_image_data() {
 # $Image $ImageData
 
-#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
-	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
+	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
 }
 
 readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
@@ -65,38 +65,38 @@ function get_image_status() {
 
 	local N=$(grep -c 'no entity was found' $ImageData)
 	if [ $N -gt 0 ]; then
-		local Nimm=$(check_bpimmedia $ImageDir $Image)
-		echo "$Nimm"
-		return
+#		local Nimm=$(check_bpimmedia $ImageDir $Image)
+		return 0
 	fi
+
+	N=$(grep "^IMAGE" $ImageData | awk '{print $29}')
+	[[ $N -eq 1 ]] && return 1
 	
 	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
 	if [ $NCopies -eq 0 ]; then	# ???
-	  echo "1"
-		return
+		return 1
 	elif [ $NCopies -eq 1 ]; then	
 	  local MediaType=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}')
 		if [ $MediaType -eq $cMediaTypeDisk ]; then
 			Retn=$(grep '^IMAGE' $ImageData | awk '{print $13}')
 			Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $2}')
-			echo "2"
+			return 2
 		else	# $MediaType -eq $cMediaTypeTape
-			echo "4"
+			return 4
 		fi
-		return	
 	fi
 	
-	echo "3"	# $NCopies -eq 2
+	return 3	# $NCopies -eq 2
 }
 
 for Dir in adisk bdisk cdisk
 do
 	check_dir $Dir
 
-	ImagesFile="$Dir.out"
-	StatusFile="${Dir}_status.txt"
-#	find /$Dir -name "*.img*" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' | awk -F/ '{print $NF}' > $ImagesFile
-	find /$Dir -name "*.img" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' > $ImagesFile
+	ImagesFile="$(basename $0)_$Dir.out"
+	StatusFile="$(basename $0)_${Dir}_status.txt"
+#	find /$Dir -name "*.img*" -print | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $1"_"$2}' | awk -F/ '{print $NF}' > $ImagesFile
+	find /$Dir -name "*.img" -print | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $1"_"$2}' > $ImagesFile
 	
 	[[ -f $StatusFile ]] && rm $StatusFile
 	while read ImageRecord
@@ -105,13 +105,14 @@ do
 		ImageDir=$(echo $ImageRecord | xargs dirname)
 
 #		checking info files existence		
-		Ninfo=$(ls -l $ImageDir/*.info | grep -c "$Image")
+		Ninfo=$(ls -l $ImageRecord*.info | grep -c "$Image")
 		if [[ $Ninfo -eq 0 ]]; then
 			echo "$Err info files are absent for $ImageDir/$Image !"
 			continue
 		fi
 		
-	  ImageStatus=$(get_image_status $Image) 
+		get_image_status $Image
+		ImageStatus=$?
 		echo "$ImageStatus $Image" >> $StatusFile
 	
 	done < $ImagesFile

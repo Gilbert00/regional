@@ -1,0 +1,94 @@
+#!/bin/bash
+#
+# v 0.0.3
+#
+
+#set -x
+
+readonly Err="***Error***:"
+
+readonly AllImages="$(basename $0)_images.txt"
+[[ -f $AllImages ]] && rm $AllImages
+readonly ImagesSorted="$(basename $0)_sorted.txt"
+
+function check_dir() {
+# $Dir
+
+	if [[ ! -d $1 ]]; then
+		echo "$Err Directory $1 don't exists !"
+		exit 10
+	fi
+}
+
+function out_subdir_images() {
+# $SubDir
+  local SubDir=$1
+	local ImageFile
+	local ImageName
+	local Dir1=$(echo $SubDir | sed 's/\//-/g')
+
+	local OneDir="/tmp/$(basename $0)_onedir_$Dir1.tmp"
+
+#	ls -lrt $SubDir/*_F1*.img | sed '1d' | awk '{print $9}' > $OneDir
+	ls -lrt $SubDir/*_F1*.img |  awk '{print $10}' | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $0}' > $OneDir
+	
+	while read ImageFile
+	do
+		ImageName=$(echo "$ImageFile" | xargs basename | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $1"_"$2}')
+		echo "$ImageName $1" >> $AllImages
+	done < $OneDir
+}
+
+function check_dubbles() {
+
+	local ImagesDubbles="$(basename $0).txt"
+	[[ -f $ImagesDubbles ]] && rm -f $ImagesDubbles
+	
+  local ImgOld
+	local ImgNew
+	local DirOld
+	local i=0
+	local n=0
+	while read ImgNew ImgDir
+	do
+		if [[ $i -gt 0 ]]; then
+		  if [[ $ImgOld == $ImgNew ]]; then
+				echo -e "Dubles:\n $DirOld $ImgOld\n $ImgDir $ImgNew" >> $ImagesDubbles
+				n=$((n+1))
+			fi
+		
+		fi
+		
+		ImgOld=$ImgNew
+		DirOld=$ImgDir
+		i=$((i+1))
+	done < $ImagesSorted
+	
+	[[ $n -eq 0 ]] && echo "Not image dubles" > $ImagesDubbles
+}
+
+for Dir in adisk bdisk cdisk
+do
+	Dir0="/$Dir"
+	check_dir $Dir0
+
+	SubDirFile="$(basename $0)_${Dir}_subdirs.txt"
+
+#	find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
+	find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $0}' | xargs dirname | sort -u > $SubDirFile
+
+
+	while read SubDir
+	do
+		:	
+		out_subdir_images	$SubDir
+	done < $SubDirFile
+	
+done	
+
+sort $AllImages > $ImagesSorted
+
+check_dubbles
+
+exit 0
+

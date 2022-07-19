@@ -1,0 +1,85 @@
+#!/bin/bash
+#
+# v 0.0.2
+#
+
+#set -x
+
+readonly Err="***Error***:"
+
+#readonly ImagesFile=/tmp/$(basename $0)_images_$$.tmp
+
+readonly DirLog="/usr/openv/netbackup/logs/user_ops"
+
+readonly cBeforeImport=0
+readonly cAfterImport1=1
+readonly cAfterImport2=2
+readonly cAfterDupl=3
+readonly cAfterDiskDel=4
+
+Copy=0
+Retn=0
+
+readonly cMediaTypeDisk=0
+readonly cMediaTypeTape=2
+
+readonly cMediaEmpty="---"
+	MediaDisk=$cMediaEmpty
+	MediaTape=$cMediaEmpty
+
+function check_dir() {
+# $Dir
+
+	if [[ ! -d /$1 ]]; then
+		echo "$Err Directory /$1 don't exists !"
+		exit 10
+	fi
+}
+
+function get_image_data() {
+# $Image $ImageData
+
+	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
+}
+
+function get_MediaTape() {
+	MediaTape=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $9}' MT=$cMediaTypeTape | sed -n '1p')
+	MediaTape=${MediaTape:-$cMediaEmpty}
+}
+
+#-----------------------
+# main
+
+for Dir in adisk bdisk cdisk
+do
+	check_dir $Dir
+
+	ImagesFile="$(basename $0)_$Dir.out"
+#	StatusFile="${Dir}_status.txt"
+#	find /$Dir -name "*.img*" -print | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $1"_"$2}' | awk -F/ '{print $NF}' > $ImagesFile
+	find /$Dir -name "*.img" -print | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $1"_"$2}' > $ImagesFile
+	
+#	[[ -f $StatusFile ]] && rm $StatusFile
+	while read ImageRecord
+	do
+		echo $ImageRecord
+		
+	  Image=$(echo $ImageRecord | xargs basename)
+		ImageDir=$(echo $ImageRecord | xargs dirname)
+		
+		ImageData="/tmp/$(basename $0)_image_$Image.tmp"
+		get_image_data $Image $ImageData
+		get_MediaTape
+
+		if [ $MediaTape != $cMediaEmpty ]; then
+			echo "Tape:$MediaTape"
+#!!!			rm -f ${ImageRecord}*
+			echo "The image $ImageRecord has been deleted fron disk."
+		fi		
+		
+	done < $ImagesFile
+done
+
+exit 0
+

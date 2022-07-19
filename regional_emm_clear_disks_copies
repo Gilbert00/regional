@@ -1,0 +1,172 @@
+#!/bin/bash
+#
+# v 0.0.3
+#
+# ./regional_emm_clear_disks_copies > regional_emm_clear_disks_copies.out  2>&1
+
+#set -x
+
+readonly Err="***Error***:"
+
+readonly Media="p0ubkp-nb2020lp.region.vtb.ru"
+readonly Client=$Media
+
+readonly DirLog="/usr/openv/netbackup/logs/user_ops"
+readonly ImageData="/tmp/$(basename $0)_image_$$.tmp"
+readonly Tapes="/tmp/$(basename $0)_tapes_$$.tmp"
+
+readonly ImagesFile="$(basename $0)_images.txt"
+
+readonly DVP="RegionalBackups"
+
+readonly cBeforeImport=0
+readonly cAfterImport1=1
+readonly cAfterImport2=2
+readonly cAfterDupl=3
+readonly cAfterDiskDel=4
+
+Copy=0
+Retn=0
+
+readonly cMediaTypeDisk=0
+readonly cMediaTypeTape=2
+
+readonly cMediaEmpty="---"
+	MediaDisk=$cMediaEmpty
+	MediaTape=$cMediaEmpty
+
+function get_image_data() {
+# $Image $ImageData
+
+#	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -l > $2 2>&1
+	/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -l > $2 2>&1
+}
+
+function get_MediaTape() {
+	MediaTape=$(grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $9}' MT=$cMediaTypeTape | sed -n '1p')
+	MediaTape=${MediaTape:-$cMediaEmpty}
+}
+
+function check_volume_pool() {
+	local NTape=$(grep -c $MediaTape $Tapes)
+	[[ $NTape -eq 0 ]] && return 1
+	return 0
+}
+
+function clear_disk_copies() {
+# $ImageData
+
+#	local ImageData=$1
+	DiskCopiesFile="/tmp/$(basename $0)_disk_copies_$Image"
+	
+	grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $2,$9}' MT=$cMediaTypeDisk > $DiskCopiesFile
+	
+	while read Copy ImageFull
+	do
+	  ImageFull=$(echo $ImageFull | sed 's/\/\//\//g')
+		
+		check_disk $(echo $ImageFull | xargs dirname)
+		[[ $? -eq 0 ]] && delete_disk_copy $Image $Copy 
+	done < $DiskCopiesFile
+}
+
+function check_disk() {
+# CopyDir
+	local Dir=$1
+	local HighDir=$(echo $Dir | awk -F/ '{print $2}')
+	local N=$(echo "adisk bdisk cdisk" | grep -c "$HighDir")
+	return $((1-N))
+}
+
+function check_disk_copies() {
+# $ImageData
+
+#	local ImageData=$1
+	DiskCopiesFile="/tmp/$(basename $0)_disk_copies_$Image"
+	
+	grep '^FRAG' $ImageData | awk '{if ($3==1 && $6==MT) print $2,$9}' MT=$cMediaTypeDisk > $DiskCopiesFile
+	
+	while read Copy ImageFull
+	do
+	  ImageFull=$(echo $ImageFull | sed 's/\/\//\//g')
+
+		check_on_disk $ImageFull
+		[[ $? -gt 0 ]] && clear_disk_copy $ImageData $Copy
+	done < $DiskCopiesFile
+}
+
+function clear_disk_copy() {
+# $ImageData $Copy
+
+	check_disk $(echo $ImageFull | xargs dirname)
+	[[ $? -eq 0 ]] && delete_disk_copy $Image $Copy
+}
+
+function check_on_disk() {
+# $ImageFull
+
+	local N=$(ls -lrt $1*.img 2>&1 | grep -c 'No such file')
+	return $N
+}
+
+function delete_disk_copy() {
+# $Image $Copy
+  local Image=$1
+	local Copy=$2
+	
+	local CMD="/usr/openv/netbackup/bin/admincmd/bpimage -deletecopy $Copy -backupid $Image"
+	echo $CMD
+	$CMD
+#	/usr/openv/netbackup/bin/admincmd/bpimage -deletecopy $Copy -backupid $Image
+	PID=$!
+  wait $PID
+	RC=$?
+	echo "Finish Exclude the disk copy $Copy, $Image, RC=$RC"	
+	return $RC
+}
+
+#-----------------------
+# main
+
+/usr/openv/volmgr/bin/vmquery -pn $DVP -b | sed '1,3d' | awk '{print $1}' > $Tapes
+
+#/usr/openv/netbackup/bin/admincmd/bpimagelist -server $Media  -d 01/01/2001 -e 06/30/2030 -option INCLUDE_PRE_IMPORT -idonly | awk '{print $10}' > $ImagesFile
+/usr/openv/netbackup/bin/admincmd/bpimagelist -server $Media  -d 01/01/2001 -e 06/30/2030 -idonly | awk '{print $10}' > $ImagesFile
+	
+while read Image
+do
+	echo $Image
+	get_image_data $Image $ImageData
+	get_MediaTape
+	
+	if [ $MediaTape != $cMediaEmpty ]; then
+		check_volume_pool
+		[[ $? -gt 0 ]] && continue
+		
+		clear_disk_copies $ImageData
+	else
+		check_disk_copies $ImageData
+	fi
+
+done < $ImagesFile
+
+exit 0
+
+# get_image_data
+# get_MediaTape
+# if ! empty MediaTape then
+#		check_volume_pool
+	# check_disk + clear_disk_copies
+# else
+	# check_disk_copies
+# fi	
+
+# check_disk_copies:
+# for imageFull in disk_images
+# do
+  # if ! check_on_disk then
+	  # check_disk && clear_disk_copy
+	# fi
+# done
+# check_disk:
+# dir in (adisk bdisk cdisk)	

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.0.2
+# v 0.0.3
 #
 
 #set -x
@@ -32,7 +32,7 @@ do
 	
     SubDirFile="${Dir}_subdirs.txt"
 
-    find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1") print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
+    find $Dir0 -name "*.img" -print | awk -F_ '{if ($4=="F1" || $4~/^F1\./) print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
 	
     while read SubDir
     do
