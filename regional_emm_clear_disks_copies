@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.0.3
+# v 0.0.4
 #
 # ./regional_emm_clear_disks_copies > regional_emm_clear_disks_copies.out  2>&1
 
@@ -66,7 +66,7 @@ function clear_disk_copies() {
 	  ImageFull=$(echo $ImageFull | sed 's/\/\//\//g')
 		
 		check_disk $(echo $ImageFull | xargs dirname)
-		[[ $? -eq 0 ]] && delete_disk_copy $Image $Copy 
+		[[ $? -eq 0 ]] && delete_disk_copy $Image $Copy $ImageFull
 	done < $DiskCopiesFile
 }
 
@@ -99,7 +99,7 @@ function clear_disk_copy() {
 # $ImageData $Copy
 
 	check_disk $(echo $ImageFull | xargs dirname)
-	[[ $? -eq 0 ]] && delete_disk_copy $Image $Copy
+	[[ $? -eq 0 ]] && delete_disk_copy $Image $Copy $ImageFull
 }
 
 function check_on_disk() {
@@ -110,9 +110,10 @@ function check_on_disk() {
 }
 
 function delete_disk_copy() {
-# $Image $Copy
+# $Image $Copy $ImageFull
   local Image=$1
 	local Copy=$2
+	local ImageFull=$3
 	
 	local CMD="/usr/openv/netbackup/bin/admincmd/bpimage -deletecopy $Copy -backupid $Image"
 	echo $CMD
@@ -121,7 +122,7 @@ function delete_disk_copy() {
 	PID=$!
   wait $PID
 	RC=$?
-	echo "Finish Exclude the disk copy $Copy, $Image, RC=$RC"	
+	echo "Finish Exclude the disk copy $Copy, $ImageFull, RC=$RC"	
 	return $RC
 }
 
@@ -135,7 +136,7 @@ function delete_disk_copy() {
 	
 while read Image
 do
-	echo $Image
+#	echo $Image
 	get_image_data $Image $ImageData
 	get_MediaTape
 	
