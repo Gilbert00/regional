@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.0.1
+# v 0.0.3
 #
 
 #set -x
@@ -28,16 +28,17 @@ function check_subdir_images() {
 	local Img
 	local Dir1=$(echo $SubDir | sed 's/\//-/g')
 
-	local OneDirImages="/tmp/$(basename $0)_onedir_$Dir1.tmp"
+	local OneDirImages="/tmp/$(basename $0)_onedir_$Dir1.tmp" # images names
 
 	ls -lrt $SubDir/* | awk '{print $NF}' | awk -F_ '{print $1"_"$2}' | xargs basename -a | sort -u > $OneDirImages
 	
 	while read ImageName
 	do
 #		echo $ImageName
-		OneImage0="/tmp/$(basename $0)_oneimage_${ImageName}_0"
-		OneImage1="/tmp/$(basename $0)_oneimage_${ImageName}_1"
-		OneImage2="/tmp/$(basename $0)_oneimage_${ImageName}_2"
+
+		OneImage0="/tmp/$(basename $0)_oneimage_${ImageName}_0" # image files
+		OneImage1="/tmp/$(basename $0)_oneimage_${ImageName}_1" # image coded files
+		OneImage2="/tmp/$(basename $0)_oneimage_${ImageName}_2" # image sorted coded files
 		
 		ls -lrt $SubDir/$ImageName* | awk '{print $NF}' | xargs basename -a > $OneImage0
 		
@@ -56,35 +57,35 @@ function check_subdir_images() {
 		check_copy_one $OneImage2
 		if [[ $? -gt 0 ]]; then
 		  echo "$Err Image has many copies:"
-			echo_image $OneImage0 $SubDir
+			echo_image $ImageName $SubDir
 			continue
 		fi
 
 		check_bad_ext $OneImage2
 		if [[ $? -gt 0 ]]; then
 		  echo "$Err Image has unsupported files:"
-			echo_image $OneImage0 $SubDir
+			echo_image $ImageName $SubDir
 			continue
 		fi
 		
 		check_eq_ext $OneImage2
 		if [[ $? -gt 0 ]]; then
 		  echo "$Err Some needed files are absent:"		  
-			echo_image $OneImage0 $SubDir
+			echo_image $ImageName $SubDir
 			continue
 		fi
 		
 		check_sequence $OneImage2 0
 		if [[ $? -gt 0 ]]; then
 		  echo "$Err Some needed files are absent:"		  
-			echo_image $OneImage0 $SubDir
+			echo_image $ImageName $SubDir
 			continue
 		fi
 
 		check_sequence $OneImage2 1
 		if [[ $? -gt 0 ]]; then
 		  echo "$Err Some needed files are absent:"		  
-			echo_image $OneImage0 $SubDir
+			echo_image $ImageName $SubDir
 			continue
 		fi
 		
@@ -133,11 +134,14 @@ function check_sequence() {
 }
 
 function echo_image() {
-# $OneImage0 $SubDir
+# $ImageName $SubDir
   echo $2
-	cat $1
+	ls -lrt $2/$1* | cut -f1-3,6- -d " "
 	echo ""
 }
+
+#-------------------------------
+# main
 
 for Dir in adisk bdisk cdisk
 do
@@ -146,7 +150,8 @@ do
 
 	SubDirFile="$(basename $0)_${Dir}_subdirs.txt"
 
-	find $Dir0 -name "*.img" -print -o -name "*.info" -print | awk -F_ '{print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
+# All subdirs with images files 	
+	find $Dir0 -name "*.img" -print -o -name "*.info"-o -name "*.filepart" -print | awk -F_ '{print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
 
 	while read SubDir
 	do
