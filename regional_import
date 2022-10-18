@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #set -x
-readonly Version="0.0.9"
+readonly Version="0.1.0"
 # 
 #
 
@@ -49,8 +49,9 @@ function check_dir() {
 }
 
 function curr_time() {
-#  echo "at $(date +%Y-%m-%d_%H:%M:%S)"
-  echo "at $(date +%Y.%m.%d_%H:%M:%S)"
+#  echo "at $(date +%Y.%m.%d_%H:%M:%S)"
+  echo "$(date +%Y.%m.%d_%H:%M:%S)"
+
 }
 
 function set_ImagesFile() {
@@ -69,14 +70,14 @@ function do_import1() {
 	echo "PID:$!"
   wait $PID
 	RC=$?
-	echo "Finish Import 1 of the Dir $1, RC=$RC $(curr_time)"
+	echo "$(curr_time) Dir $1: Finish Import 1, RC=$RC "
 }
 
 function do_import2() {
 # $Image
 
   local DT="-s 01/01/2001 00:00:00 -e 01/01/2030 00:00:00"
-	echo "Start import of the image $1 $(curr_time)"
+	echo "$(curr_time) Image $1: Start import"
 #  return
 	
   nohup $CMDimport -backupid $1 -L $DirLog/$(basename $0)_import2_${1}.log -l $DT &
@@ -84,7 +85,7 @@ function do_import2() {
 	echo "PID:$!"
   wait $PID
 	RC=$?
-	echo "Finish import of the image $1, RC=$RC $(curr_time)"
+	echo "$(curr_time) Image $1: Finish import, RC=$RC "
 	return $RC
 }
 
@@ -95,7 +96,7 @@ function do_dupl() {
 	get_dupl_params
 	local DT=""
 	local Own=""
-	echo "Start duplication of the image $1 $(curr_time)"
+	echo "$(curr_time) Image $1: Start duplication"
 #  return
 	
   nohup $CmdDupl $DT -backupid $1 -cn $2 -dp $DVP -dstunit $DSTU -rl $Retn -set_primary 1 -fail_on_error 0 $Own -L $DirLog/$(basename $0)_dupl_${1}.log -v & 
@@ -103,7 +104,7 @@ function do_dupl() {
   echo "PID:$!"
   wait $PID
 	RC=$?
-	echo "Finish duplication of the image $1, RC=$RC $(curr_time)"
+	echo "$(curr_time) Image $1: Finish duplication, RC=$RC"
 	return $RC
 }
 
@@ -115,7 +116,7 @@ function delete_disk_copy() {
 	get_image_status $Image
 	local ImageStatus=$?
 	if [[ $ImageStatus -ne cAfterDupl ]]; then
-	  echo "Err Invalid status $ImageStatus of the image $Image"
+	  echo "$Err Image $Image - Invalid status $ImageStatus"
 	  return 1
 	fi
 	
@@ -127,7 +128,7 @@ function delete_disk_copy() {
 	PID=$!
   wait $PID
 	RC=$?
-	echo "Finish Exclude the disk copy $Copy, $1, RC=$RC $(curr_time)"	
+	echo "$(curr_time) Image $1: Finish Exclude the disk copy $Copy, RC=$RC"	
 	return $RC
 }
 
@@ -143,22 +144,6 @@ get_dupl_params() {
 #TO-DO: Copy from disks image.	Done in one_dir_import
 #	Copy=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $2}' | sed -n '1p')
 }
-
-# readonly ImMediaData="/tmp/$(basename $0)_immedia_$$.tmp"
-
-# function check_bpimmedia() {
-# #	$ImageDir $Image
-
-	# local ImgDir=$1
-	# local Img=$2
-	# /usr/openv/netbackup/bin/admincmd/bpimmedia -dt 1 -mediaid $ImgDir -l -option ONLY_PRE_IMPORT > $ImMediaData 2>&1 
-	# local N=$(grep -c "$Img" $ImMediaData)
-	# if [ $N -gt 0 ]; then
-	  # echo "1"
-	# else
-		# echo "0"
-	# fi
-# }
 
 readonly cMediaTypeDisk=0
 readonly cMediaTypeTape=2
@@ -238,19 +223,20 @@ function one_dir_import() {
 	#			echo "The Image $Image - copy on disk is excluded."
 				;;
 			4)
-				echo "The Image $Image - copy on disk had been excluded."
+				echo "$(curr_time) Image $Image: copy on disk had been excluded."
 				;;
 			*)
-			echo "$Err Invalid ImageStatus:$ImageStatus for the $Image !"
+			echo "$Err Image $Image - Invalid status $ImageStatus !"
 		esac
 	done < $ImagesFile
 
 }
 
 function send_ended_mail() {
+# $EndedTxt
 
   mailx -s "Program $(basename $0)" backup_group@vtb.ru <<EOF
-  Program $(basename $0) is ended $(curr_time).	
+   $1	
 EOF
 	
   return 0
@@ -278,9 +264,10 @@ do
 
 done	
 
-send_ended_mail
+EndedTxt="$(curr_time) Program $(basename $0) is ended."
+send_ended_mail $EndedTxt
 
-echo "Program $(basename $0) is ended $(curr_time)."
+echo $EndedTxt
 
 exit 0
 
