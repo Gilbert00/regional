@@ -1,0 +1,23 @@
+#!/bin/bash
+#
+# v.0.0.2
+#
+
+DIR="/root/regional"
+Dat=$(date +%Y%m%d%H)
+
+cd $DIR
+
+N=$(ps -ef | grep -c  "[r]egional_import")
+
+if [[ $N -eq 0 ]]; then
+	$DIR/regional_disk_images_check > $DIR/regional_disk_images_check.out.$Dat 2>&1
+	$DIR/regional_emm_status > $DIR/regional_emm_status.txt.$Dat 2>&1
+
+	nohup $DIR/regional_import > $DIR/regional_import.out.$Dat 2>&1 &
+	
+	echo $(date)
+	echo "regional_import has started"
+else
+  echo ""	
+fi
