@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# v 0.1.1
+# v 0.2.1
 #
 
-set -x
+#set -x
 
 readonly Err="***Error***:"
 
@@ -14,7 +14,7 @@ readonly DirLog="/usr/openv/netbackup/logs/user_ops"
 readonly ImageData="/tmp/$(basename $0)_image_$$.tmp"
 readonly Tapes="/tmp/$(basename $0)_tapes_$$.tmp"
 
-readonly ImagesFile="emm_images.txt"
+readonly ImagesFile="regional_emm_images.txt"
 readonly StatusFile="regional_emm_status.txt"
 [[ -f $StatusFile ]] && rm $StatusFile
 
@@ -69,6 +69,8 @@ readonly cMediaEmpty="---"
 	MediaTape=$cMediaEmpty
 	
 ExpireDate=""	
+ClientHost=""
+readonly ClientHostEmpty="----"
 
 function get_image_status() {
 # $Image
@@ -85,6 +87,8 @@ function get_image_status() {
 
 	UTime=$(grep '^IMAGE' $ImageData | awk '{print $16}')
 	ExpireDate=$(get_date_on_utime $UTime)
+	ClientHost=$(grep '^IMAGE' $ImageData | awk '{print $2}')
+	[[ -z $ClientHost ]] && ClientHost=$ClientHostEmpty
 	
 	N=$(grep "^IMAGE" $ImageData | awk '{print $29}')
 	[[ $N -eq 1 ]] && return 1
@@ -165,7 +169,7 @@ do
 		[[ $NTape -eq 0 ]] && continue
 	fi	
 	
-	echo "$ImageStatus $Image $MediaDisk $IsOnDisk $MediaTape $ExpireDate" >> $StatusFile
+	echo "$ImageStatus $Image $ClientHost $MediaDisk $IsOnDisk $MediaTape $ExpireDate" >> $StatusFile
 
 done < $ImagesFile
 
