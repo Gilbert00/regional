@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v.0.0.2
+# v.0.0.3
 #
 
 DIR="/root/regional"
@@ -12,7 +12,8 @@ N=$(ps -ef | grep -c  "[r]egional_import")
 
 if [[ $N -eq 0 ]]; then
 	$DIR/regional_disk_images_check > $DIR/regional_disk_images_check.out.$Dat 2>&1
-	$DIR/regional_emm_status > $DIR/regional_emm_status.txt.$Dat 2>&1
+	$DIR/regional_emm_status > $DIR/regional_emm_status.out.$Dat 2>&1
+	mv -f $DIR/regional_emm_status.txt  $DIR/regional_emm_status.txt.$Dat
 
 	nohup $DIR/regional_import > $DIR/regional_import.out.$Dat 2>&1 &
 	
