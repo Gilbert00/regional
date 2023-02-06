@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.2.1
+# v 0.3.1
 #
 
 #set -x
@@ -68,7 +68,9 @@ readonly cMediaEmpty="---"
 	MediaDisk=$cMediaEmpty
 	MediaTape=$cMediaEmpty
 	
-ExpireDate=""	
+ExpireTime=""	
+BackupTime=""
+Retention=""
 ClientHost=""
 readonly ClientHostEmpty="----"
 
@@ -85,8 +87,14 @@ function get_image_status() {
 		return 0
 	fi
 
+	UTime=$(grep '^IMAGE' $ImageData | awk '{print $14}')
+	BackupTime=$(get_date_on_utime $UTime)
+	
 	UTime=$(grep '^IMAGE' $ImageData | awk '{print $16}')
-	ExpireDate=$(get_date_on_utime $UTime)
+	ExpireTime=$(get_date_on_utime $UTime)
+	
+	Retention=$(grep '^IMAGE' $ImageData | awk '{print $13}')
+	
 	ClientHost=$(grep '^IMAGE' $ImageData | awk '{print $2}')
 	[[ -z $ClientHost ]] && ClientHost=$ClientHostEmpty
 	
@@ -169,7 +177,7 @@ do
 		[[ $NTape -eq 0 ]] && continue
 	fi	
 	
-	echo "$ImageStatus $Image $ClientHost $MediaDisk $IsOnDisk $MediaTape $ExpireDate" >> $StatusFile
+	echo "$ImageStatus $Image $ClientHost $MediaDisk $IsOnDisk $MediaTape $BackupTime $ExpireTime $Retention" >> $StatusFile
 
 done < $ImagesFile
 
