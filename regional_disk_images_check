@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# v 0.0.3
+# v 0.0.4
 #
 
 #set -x
@@ -151,7 +151,7 @@ do
 	SubDirFile="$(basename $0)_${Dir}_subdirs.txt"
 
 # All subdirs with images files 	
-	find $Dir0 -name "*.img" -print -o -name "*.info"-o -name "*.filepart" -print | awk -F_ '{print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
+	find $Dir0 -name "*.img" -print -o -name "*.info" -o -name "*.filepart" -print | awk -F_ '{print $1"_"$2}' | xargs dirname | sort -u > $SubDirFile
 
 	while read SubDir
 	do
