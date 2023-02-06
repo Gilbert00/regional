@@ -1,0 +1,6 @@
+#! /bin/sh
+#
+# v 0.0.2
+
+/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT $2
+#/usr/openv/netbackup/bin/admincmd/bpimagelist -backupid $1 -option INCLUDE_PRE_IMPORT -L
