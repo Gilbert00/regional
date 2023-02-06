@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #set -x
-readonly Version="0.1.0"
+readonly Version="0.2.1"
 # 
 #
 
@@ -23,7 +23,7 @@ readonly DVP="RegionalBackups"
 readonly CMDimport="/usr/openv/netbackup/bin/admincmd/bpimport"
 readonly CmdDupl="/usr/openv/netbackup/bin/admincmd/bpduplicate"
 readonly DirLog="/usr/openv/netbackup/logs/user_ops"
-readonly ImageData="/tmp/$(basename $0)_image_$$.tmp"
+ImageData="/tmp/$(basename $0)_image_$$.tmp"
 
 readonly cBeforeImport=0
 readonly cAfterImport1=1
@@ -54,6 +54,12 @@ function curr_time() {
 
 }
 
+function get_date_on_utime() {
+# UTime
+
+	echo "$(date -d @$1 +%Y-%m-%d_%H:%M:%S)"
+}
+
 function set_ImagesFile() {
 # $ImagesDir $ImagesFile
 
@@ -71,6 +77,8 @@ function do_import1() {
   wait $PID
 	RC=$?
 	echo "$(curr_time) Dir $1: Finish Import 1, RC=$RC "
+
+	[[ $RC -gt 0 ]] && exit $RC
 }
 
 function do_import2() {
@@ -80,11 +88,22 @@ function do_import2() {
 	echo "$(curr_time) Image $1: Start import"
 #  return
 	
-  nohup $CMDimport -backupid $1 -L $DirLog/$(basename $0)_import2_${1}.log -l $DT &
+  CMD="nohup $CMDimport -backupid $1 -L $DirLog/$(basename $0)_import2_${1}.log -l $DT &"
+	echo "$CMD"
+	$CMD
 	PID=$!
 	echo "PID:$!"
   wait $PID
 	RC=$?
+
+	if [[ $RC -eq 0 ]]; then
+		local ImageData="/tmp/$(basename $0)_image_imp2_$$.tmp"
+		get_image_data $1 $ImageData
+		local UTime=$(grep '^IMAGE' $ImageData | awk '{print $16}')
+		local ExpireDate=$(get_date_on_utime $UTime)
+		echo "$(curr_time) Image $1: Expiration Date $ExpireDate"
+	fi
+	
 	echo "$(curr_time) Image $1: Finish import, RC=$RC "
 	return $RC
 }
@@ -165,6 +184,8 @@ function get_image_status() {
 	[[ $N -eq 1 ]] && return 1
 	
 	local NCopies=$(grep '^IMAGE' $ImageData | awk '{print $21}')
+	[[ -z $NCopies ]] && return 9
+	
 	if [ $NCopies -eq 0 ]; then	# ???
 	  return 1
 	elif [ $NCopies -eq 1 ]; then	
@@ -175,6 +196,8 @@ function get_image_status() {
 		else	# $MediaType -eq $cMediaTypeTape
 			return 4
 		fi
+	# else
+		# return 9
 	fi
 	
 	return 3	# $NCopies -eq 2
