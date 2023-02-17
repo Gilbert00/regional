@@ -1,10 +1,9 @@
 #!/bin/bash
 #
-# v.0.0.4
+# v.0.0.6
 #
 
 DIR="/root/regional"
-Dat=$(date +%Y%m%d%H)
 
 cd $DIR
 
@@ -12,16 +11,20 @@ N=$(ps -ef | grep -c  "[r]egional_import")
 
 if [[ $N -eq 0 ]]; then
 	echo $(date)
+	Dat=$(date +%Y%m%d%H)
 	
 	echo "regional_disk_images_check is started"
 	$DIR/regional_disk_images_check > $DIR/regional_disk_images_check.out.$Dat 2>&1
+
+	nohup $DIR/regional_import > $DIR/regional_import.out.$Dat 2>&1 &
+	echo "regional_import is started"
+	wait 
+	
+	Dat=$(date +%Y%m%d%H)
 	echo "regional_emm_status is started"
 	$DIR/regional_emm_status > $DIR/regional_emm_status.out.$Dat 2>&1
 	mv -f $DIR/regional_emm_status.txt  $DIR/regional_emm_status.txt.$Dat
 
-	nohup $DIR/regional_import > $DIR/regional_import.out.$Dat 2>&1 &
-		
-	echo "regional_import is started"
-else
-  echo ""	
+# else
+  # echo ""	
 fi
