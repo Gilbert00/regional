@@ -196,7 +196,7 @@ function get_image_status() {
 	elif [ $NCopies -eq 1 ]; then	
 	  local MediaType=$(grep '^FRAG' $ImageData | awk '{if ($3==1) print $6}')
 		if [ $MediaType -eq $cMediaTypeDisk ]; then
-			get_dupl_params
+#			get_dupl_params
 			return 2
 		else	# $MediaType -eq $cMediaTypeTape
 			return 4
